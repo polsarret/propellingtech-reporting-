@@ -707,11 +707,11 @@ function KpiDetails({ data }: { data: KpiDetailsData }) {
           <div className="space-y-2 rounded-lg border border-line p-3">
             <div className="flex items-center justify-between">
               <span className="text-sm text-ink">Spain</span>
-              <span className="font-semibold tabular-nums text-propel-ink">{eur0(data.esForecast)}</span>
+              <span className="font-semibold tabular-nums text-propel-ink">{eur0(data.esForecast ?? 0)}</span>
             </div>
             <div className="flex items-center justify-between">
               <span className="text-sm text-ink">USA</span>
-              <span className="font-semibold tabular-nums text-propel-ink">{eur0(data.usForecast)}</span>
+              <span className="font-semibold tabular-nums text-propel-ink">{eur0(data.usForecast ?? 0)}</span>
             </div>
           </div>
         </div>
