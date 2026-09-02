@@ -1,0 +1,27 @@
+@import "tailwindcss";
+
+/* ===== PropellingTech brand tokens ===== */
+@theme {
+  --color-pacer: #f4f5f5; /* Pacer White  · fondo principal */
+  --color-surface: #ffffff; /* superficies / tarjetas */
+  --color-ink: #292626; /* Outer Space · texto principal */
+  --color-muted: #78756f; /* texto secundario */
+  --color-line: #e6e6e3; /* bordes discretos */
+  --color-nav: #2d3540; /* Tech Blue · nav / headers */
+  --color-propel: #6bd9de; /* Propel Blue · acento de marca */
+  --color-propel-ink: #218a8f; /* Propel Blue oscurecido para texto/iconos sobre blanco */
+  --color-solaris: #f3e667; /* secundario */
+  --color-nebula: #0e966c; /* secundario · positivo */
+  --color-hotlava: #e36d57; /* secundario · negativo/alerta */
+
+  --font-sans: var(--font-newscience), ui-sans-serif, system-ui, sans-serif;
+}
+
+:root {
+  color-scheme: light;
+}
+
+body {
+  font-family: var(--font-sans);
+  font-feature-settings: "tnum" 1; /* cifras tabulares para tablas financieras */
+}
