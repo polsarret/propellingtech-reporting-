@@ -132,13 +132,6 @@ export type ProjectReportRow = {
   accumulated: Metrics;
 };
 
-export type PersonReportRow = {
-  propellerId: string;
-  propellerName: string;
-  monthly: MonthlyMetrics[];
-  accumulated: AccumulatedMetrics;
-};
-
 /** Get closing month from P&L (same as P&L logic: last month with actual data) */
 async function getClosingMonth(year: number): Promise<number> {
   // Use same logic as P&L: last month with actual data in USA, fallback to ES
