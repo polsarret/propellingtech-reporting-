@@ -55,15 +55,16 @@ const newScen = (): Scen => ({ act: { es: z12(), us: z12() }, fc: { es: z12(), u
 
 /** Matriz del P&L: filas (categoría→subcat→cuenta) × 12 meses, por escenario (actual/forecast) y ES/US. */
 export async function getPnlMatrix(year: number): Promise<PnlMatrix> {
-  const query = `
-    SELECT scenario, pnl_l1, pnl_l2, sort_order, account,
-           ANY_VALUE(account_name) AS name, month, market,
-           CAST(SUM(balance_eur) AS FLOAT64) AS v
-    FROM ${CONSOLIDATED_VIEW}
-    WHERE year = @year AND pnl_l1 IS NOT NULL
-    GROUP BY scenario, pnl_l1, pnl_l2, sort_order, account, month, market
-  `;
-  const [rows] = await bq().query({ query, location: LOCATION, params: { year } });
+  try {
+    const query = `
+      SELECT scenario, pnl_l1, pnl_l2, sort_order, account,
+             ANY_VALUE(account_name) AS name, month, market,
+             CAST(SUM(balance_eur) AS FLOAT64) AS v
+      FROM ${CONSOLIDATED_VIEW}
+      WHERE year = @year AND pnl_l1 IS NOT NULL
+      GROUP BY scenario, pnl_l1, pnl_l2, sort_order, account, month, market
+    `;
+    const [rows] = await bq().query({ query, location: LOCATION, params: { year } });
   const flat = rows as FlatRow[];
 
   const cats = new Map<string, CatNode>();
@@ -113,6 +114,10 @@ export async function getPnlMatrix(year: number): Promise<PnlMatrix> {
   if (lastActual === 0) for (const c of list) for (let i = 0; i < 12; i++) if (c.act.es[i] !== 0) lastActual = Math.max(lastActual, i + 1);
 
   return { cats: list, lastActualMonth: lastActual, year };
+  } catch (e) {
+    console.error("Error getting P&L matrix:", e);
+    return { cats: [], lastActualMonth: 0, year };
+  }
 }
 
 /** Años disponibles en la vista (para el selector). */
