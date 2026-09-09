@@ -1,34 +1,8 @@
 import { BigQuery } from "@google-cloud/bigquery";
-import * as fs from "fs";
-import * as path from "path";
-
-// Handle GOOGLE_APPLICATION_CREDENTIALS in Vercel
-function setupCredentials() {
-  const credsEnv = process.env.GOOGLE_APPLICATION_CREDENTIALS;
-  
-  // If it's JSON content (from Vercel env var), write to temp file
-  if (credsEnv && credsEnv.startsWith("{")) {
-    try {
-      const tmpDir = "/tmp";
-      const tmpFile = path.join(tmpDir, "gcp-creds.json");
-      
-      // Write the credentials to a temporary file
-      fs.writeFileSync(tmpFile, credsEnv);
-      
-      // Point to the file instead of the JSON string
-      process.env.GOOGLE_APPLICATION_CREDENTIALS = tmpFile;
-    } catch (e) {
-      console.error("Failed to setup GCP credentials:", e);
-    }
-  }
-}
-
-// Initialize on module load
-setupCredentials();
 
 // Cliente de BigQuery.
 // - En local usa tus Application Default Credentials (gcloud auth application-default login).
-// - En Cloud Run usará la service account adjunta (sin clave).
+// - En Vercel usará las credenciales del JSON en GOOGLE_APPLICATION_CREDENTIALS.
 const PROJECT = process.env.GCP_PROJECT ?? "propellingtech-datalake";
 const LOCATION = process.env.BQ_LOCATION ?? "EU";
 const CONSOLIDATED_VIEW =
@@ -36,7 +10,22 @@ const CONSOLIDATED_VIEW =
 
 let client: BigQuery | null = null;
 function bq(): BigQuery {
-  if (!client) client = new BigQuery({ projectId: PROJECT, location: LOCATION });
+  if (!client) {
+    const options: any = { projectId: PROJECT, location: LOCATION };
+    
+    // Handle GOOGLE_APPLICATION_CREDENTIALS in Vercel
+    const credsEnv = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+    if (credsEnv && credsEnv.startsWith("{")) {
+      try {
+        // Parse JSON credentials and pass directly
+        options.credentials = JSON.parse(credsEnv);
+      } catch (e) {
+        console.error("Failed to parse GOOGLE_APPLICATION_CREDENTIALS:", e);
+      }
+    }
+    
+    client = new BigQuery(options);
+  }
   return client;
 }
 
@@ -158,7 +147,9 @@ export type ProjectReportRow = {
   accumulated: Metrics;
 };
 
-/** Get closing month from P&L (same as P&L logic: last month with actual data) */
+async function getClosingMonth(year: number): Promise<number> {
+  return 7; // Hardcoded to July for now
+}
 
 /** Income Recognition Report - aggregated by Client (closing month + accumulated) */
 export async function getIncomeRecognitionByClient(year: number): Promise<ClientReportRow[]> {
@@ -306,8 +297,4 @@ export async function getIncomeRecognitionByProject(year: number, clientName: st
   }
 
   return result;
-}
-
-async function getClosingMonth(year: number): Promise<number> {
-  return 7; // Hardcoded to July for now
 }
