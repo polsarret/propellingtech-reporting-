@@ -10,23 +10,7 @@ const CONSOLIDATED_VIEW =
 
 let client: BigQuery | null = null;
 function bq(): BigQuery {
-  if (!client) {
-    const options: any = { projectId: PROJECT, location: LOCATION };
-    
-    // En Vercel, GOOGLE_APPLICATION_CREDENTIALS contiene el JSON como string
-    const credentials = process.env.GOOGLE_APPLICATION_CREDENTIALS;
-    if (credentials && credentials.startsWith('{')) {
-      try {
-        const parsed = JSON.parse(credentials);
-        options.keyFilename = undefined;
-        options.credentials = parsed;
-      } catch (e) {
-        console.error('Failed to parse GOOGLE_APPLICATION_CREDENTIALS:', e);
-      }
-    }
-    
-    client = new BigQuery(options);
-  }
+  if (!client) client = new BigQuery({ projectId: PROJECT, location: LOCATION });
   return client;
 }
 
