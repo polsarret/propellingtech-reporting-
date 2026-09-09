@@ -6,7 +6,7 @@ import { BigQuery } from "@google-cloud/bigquery";
 const PROJECT = process.env.GCP_PROJECT ?? "propellingtech-datalake";
 const LOCATION = process.env.BQ_LOCATION ?? "EU";
 const CONSOLIDATED_VIEW =
-  "`propellingtech-datalake.03_gold_finance.vw-gld-fin-f_pnl_consolidated`";
+  "`propellingtech-datalake.03_gold_holded.tbl-gld-fin-f_pnl`";
 
 let client: BigQuery | null = null;
 function bq(): BigQuery {
