@@ -2,23 +2,29 @@ import { BigQuery } from "@google-cloud/bigquery";
 import * as fs from "fs";
 import * as path from "path";
 
-// Initialize BigQuery with credentials from environment
-function initializeCredentials() {
-  const credentialsEnv = process.env.GOOGLE_APPLICATION_CREDENTIALS;
-  if (credentialsEnv && credentialsEnv.startsWith("{")) {
+// Handle GOOGLE_APPLICATION_CREDENTIALS in Vercel
+function setupCredentials() {
+  const credsEnv = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+  
+  // If it's JSON content (from Vercel env var), write to temp file
+  if (credsEnv && credsEnv.startsWith("{")) {
     try {
-      const tmpFile = "/tmp/gcp-credentials.json";
-      if (!fs.existsSync(tmpFile)) {
-        fs.writeFileSync(tmpFile, credentialsEnv);
-      }
+      const tmpDir = "/tmp";
+      const tmpFile = path.join(tmpDir, "gcp-creds.json");
+      
+      // Write the credentials to a temporary file
+      fs.writeFileSync(tmpFile, credsEnv);
+      
+      // Point to the file instead of the JSON string
       process.env.GOOGLE_APPLICATION_CREDENTIALS = tmpFile;
     } catch (e) {
-      console.error("Failed to initialize GCP credentials:", e);
+      console.error("Failed to setup GCP credentials:", e);
     }
   }
 }
-initializeCredentials();
 
+// Initialize on module load
+setupCredentials();
 
 // Cliente de BigQuery.
 // - En local usa tus Application Default Credentials (gcloud auth application-default login).
@@ -30,23 +36,7 @@ const CONSOLIDATED_VIEW =
 
 let client: BigQuery | null = null;
 function bq(): BigQuery {
-  if (!client) {
-    const options: any = { projectId: PROJECT, location: LOCATION };
-    
-    // En Vercel, GOOGLE_APPLICATION_CREDENTIALS contiene el JSON como string
-    const credentials = process.env.GOOGLE_APPLICATION_CREDENTIALS;
-    if (credentials && credentials.startsWith('{')) {
-      try {
-        const parsed = JSON.parse(credentials);
-        options.keyFilename = undefined;
-        options.credentials = parsed;
-      } catch (e) {
-        console.error('Failed to parse GOOGLE_APPLICATION_CREDENTIALS:', e);
-      }
-    }
-    
-    client = new BigQuery(options);
-  }
+  if (!client) client = new BigQuery({ projectId: PROJECT, location: LOCATION });
   return client;
 }
 
