@@ -117,11 +117,17 @@ export async function getPnlMatrix(year: number): Promise<PnlMatrix> {
 
 /** Años disponibles en la vista (para el selector). */
 export async function getAvailableYears(): Promise<number[]> {
-  const [rows] = await bq().query({
-    query: `SELECT DISTINCT year FROM ${CONSOLIDATED_VIEW} WHERE year IS NOT NULL ORDER BY year DESC`,
-    location: LOCATION,
-  });
-  return (rows as { year: number }[]).map((r) => r.year);
+  try {
+    // Try to get years from agenda table instead of problematic consolidated view
+    const [rows] = await bq().query({
+      query: `SELECT DISTINCT EXTRACT(YEAR FROM date) as year FROM \`propellingtech-datalake.02_silver_holded.tbl-slv-ops-agenda\` WHERE EXTRACT(YEAR FROM date) IS NOT NULL ORDER BY year DESC`,
+      location: LOCATION,
+    });
+    return (rows as { year: number }[]).map((r) => r.year).filter((y) => y > 0);
+  } catch (e) {
+    console.error("Error getting available years:", e);
+    return [2026]; // Fallback
+  }
 }
 
 // Income Recognition Report Types
