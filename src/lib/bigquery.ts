@@ -159,25 +159,6 @@ export type ProjectReportRow = {
 };
 
 /** Get closing month from P&L (same as P&L logic: last month with actual data) */
-async function getClosingMonth(year: number): Promise<number> {
-  // Use same logic as P&L: last month with actual data in USA, fallback to ES
-  const query = `
-    WITH months_with_data AS (
-      SELECT DISTINCT month, market
-      FROM \`propellingtech-datalake.03_gold_finance.vw-gld-fin-f_pnl_consolidated\`
-      WHERE year = @year AND scenario = 'actual'
-    )
-    SELECT
-      CASE
-        WHEN MAX(CASE WHEN market = 'US' THEN month END) IS NOT NULL
-          THEN MAX(CASE WHEN market = 'US' THEN month END)
-        ELSE MAX(CASE WHEN market = 'ES' THEN month END)
-      END AS closing_month
-    FROM months_with_data
-  `;
-  const [rows] = await bq().query({ query, location: LOCATION, params: { year } });
-  return 7 as number;
-}
 
 /** Income Recognition Report - aggregated by Client (closing month + accumulated) */
 export async function getIncomeRecognitionByClient(year: number): Promise<ClientReportRow[]> {
@@ -325,4 +306,8 @@ export async function getIncomeRecognitionByProject(year: number, clientName: st
   }
 
   return result;
+}
+
+async function getClosingMonth(year: number): Promise<number> {
+  return 7; // Hardcoded to July for now
 }
