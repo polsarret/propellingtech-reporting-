@@ -1,4 +1,24 @@
 import { BigQuery } from "@google-cloud/bigquery";
+import * as fs from "fs";
+import * as path from "path";
+
+// Initialize BigQuery with credentials from environment
+function initializeCredentials() {
+  const credentialsEnv = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+  if (credentialsEnv && credentialsEnv.startsWith("{")) {
+    try {
+      const tmpFile = "/tmp/gcp-credentials.json";
+      if (!fs.existsSync(tmpFile)) {
+        fs.writeFileSync(tmpFile, credentialsEnv);
+      }
+      process.env.GOOGLE_APPLICATION_CREDENTIALS = tmpFile;
+    } catch (e) {
+      console.error("Failed to initialize GCP credentials:", e);
+    }
+  }
+}
+initializeCredentials();
+
 
 // Cliente de BigQuery.
 // - En local usa tus Application Default Credentials (gcloud auth application-default login).
