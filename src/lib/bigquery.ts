@@ -126,7 +126,7 @@ export async function getAvailableYears(): Promise<number[]> {
     return (rows as { year: number }[]).map((r) => r.year).filter((y) => y > 0);
   } catch (e) {
     console.error("Error getting available years:", e);
-    return [2026]; // Fallback
+    return [2026, 2025]; // Fallback
   }
 }
 
