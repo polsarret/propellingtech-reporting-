@@ -57,9 +57,11 @@ const newScen = (): Scen => ({ act: { es: z12(), us: z12() }, fc: { es: z12(), u
 export async function getPnlMatrix(year: number): Promise<PnlMatrix> {
   try {
     const query = `
-      SELECT scenario, pnl_l1, pnl_l2, sort_order, account,
-             ANY_VALUE(account_name) AS name, month, market,
-             CAST(SUM(balance_eur) AS FLOAT64) AS v
+      SELECT 
+        'actual' as scenario,
+        pnl_l1, pnl_l2, sort_order, account,
+        ANY_VALUE(account_name) AS name, month, market,
+        CAST(SUM(balance) AS FLOAT64) AS v
       FROM ${CONSOLIDATED_VIEW}
       WHERE year = @year AND pnl_l1 IS NOT NULL
       GROUP BY scenario, pnl_l1, pnl_l2, sort_order, account, month, market
