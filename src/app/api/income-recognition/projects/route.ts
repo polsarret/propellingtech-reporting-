@@ -15,7 +15,11 @@ export async function GET(request: Request) {
     const projects = await getIncomeRecognitionByProject(year, client);
     return Response.json(projects);
   } catch (error) {
-    console.error("Error fetching projects:", error);
-    return Response.json({ error: "Failed to fetch projects" }, { status: 500 });
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error("Error fetching projects:", errorMessage, error);
+    return Response.json({ 
+      error: "Failed to fetch projects",
+      details: errorMessage 
+    }, { status: 500 });
   }
 }
