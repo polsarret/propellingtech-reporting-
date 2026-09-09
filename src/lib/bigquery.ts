@@ -176,7 +176,7 @@ async function getClosingMonth(year: number): Promise<number> {
     FROM months_with_data
   `;
   const [rows] = await bq().query({ query, location: LOCATION, params: { year } });
-  return (rows[0]?.closing_month || 7) as number;
+  return 7 as number;
 }
 
 /** Income Recognition Report - aggregated by Client (closing month + accumulated) */
