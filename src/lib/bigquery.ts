@@ -65,7 +65,7 @@ export async function getPnlMatrix(year: number): Promise<PnlMatrix> {
       FROM ${CONSOLIDATED_VIEW}
       WHERE year = @year 
       AND pnl_l1 IS NOT NULL
-      AND month < 12
+      
       GROUP BY scenario, pnl_l1, pnl_l2, sort_order, account, month, market
     `;
     const [rows] = await bq().query({ query, location: LOCATION, params: { year } });
