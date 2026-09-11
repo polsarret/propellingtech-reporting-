@@ -65,13 +65,7 @@ export async function getPnlMatrix(year: number): Promise<PnlMatrix> {
       FROM ${CONSOLIDATED_VIEW}
       WHERE year = @year 
       AND pnl_l1 IS NOT NULL
-      AND pnl_l1 NOT IN ('Opening', 'Closing', 'Regularization')
-      AND account_name NOT LIKE '%Apertura%'
-      AND account_name NOT LIKE '%Cierre%'
-      AND account_name NOT LIKE '%Regularization%'
-      AND account_name NOT LIKE '%Resultado%'
-      AND account_name NOT LIKE '%Beneficio%'
-      AND account NOT IN (1999, 19999)
+      AND month < 12
       GROUP BY scenario, pnl_l1, pnl_l2, sort_order, account, month, market
     `;
     const [rows] = await bq().query({ query, location: LOCATION, params: { year } });
