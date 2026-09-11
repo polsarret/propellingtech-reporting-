@@ -64,7 +64,7 @@ export async function getPnlMatrix(year: number): Promise<PnlMatrix> {
         CAST(SUM(balance) AS FLOAT64) AS v
       FROM ${CONSOLIDATED_VIEW}
       WHERE year = @year 
-      AND pnl_l1 IS NOT NULL
+      
       
       GROUP BY scenario, pnl_l1, pnl_l2, sort_order, account, month, market
     `;
