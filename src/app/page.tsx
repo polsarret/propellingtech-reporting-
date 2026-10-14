@@ -19,7 +19,7 @@ export default async function Home() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight text-ink sm:text-3xl">Consolidated P&amp;L</h1>
           <p className="mt-1 text-sm text-muted">
-            Spain + USA · in euros · source BigQuery. Actual by default; turn on Forecast to project open
+            SL (Spain) + LLC (USA) + Corp · in euros · source BigQuery. Actual by default; turn on Forecast to project open
             months.
           </p>
         </div>
@@ -35,7 +35,7 @@ export default async function Home() {
       <PnlWorkspace matrices={matrices} />
 
       <p className="mt-6 text-xs text-muted/80">
-        Live from BigQuery · view <code className="text-propel-ink">vw-gld-fin-f_pnl_consolidated</code>
+        Live from BigQuery · table <code className="text-propel-ink">03_gold_holded.tbl-gld-fin-f_pnl</code>
       </p>
     </main>
   );

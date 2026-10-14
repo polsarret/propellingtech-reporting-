@@ -1,4 +1,7 @@
 import { BigQuery } from "@google-cloud/bigquery";
+import type { Entity } from "./entities";
+
+export type { Entity } from "./entities";
 
 // Cliente de BigQuery.
 // - En local usa tus Application Default Credentials (gcloud auth application-default login).
@@ -31,10 +34,11 @@ function bq(): BigQuery {
 
 const z12 = () => new Array<number>(12).fill(0);
 
-// Cada nodo lleva el desglose mensual por escenario (actual/forecast) y mercado (ES/US).
-export type ByMarket = { es: number[]; us: number[] };
+// `other` recoge valores de `market` no reconocidos: solo cuentan en el consolidado.
+export type ByMarket = Record<Entity | "other", number[]>;
 export type Scen = { act: ByMarket; fc: ByMarket };
-export type LeafNode = Scen & { account: number; name: string };
+// account como string: los IDs de QuickBooks (CORP/LLC) tienen 19 dígitos y no caben en un number de JS.
+export type LeafNode = Scen & { account: string; name: string };
 export type SubNode = Scen & { key: string; label: string; sort: string; accounts: LeafNode[] };
 export type CatNode = Scen & { key: string; label: string; sort: string; subs: SubNode[] };
 export type PnlMatrix = { cats: CatNode[]; lastActualMonth: number; year: number };
@@ -44,39 +48,48 @@ type FlatRow = {
   pnl_l1: string;
   pnl_l2: string | null;
   sort_order: string;
-  account: number;
+  account: string;
   name: string;
   month: number;
   market: string;
   v: number;
 };
 
-const newScen = (): Scen => ({ act: { es: z12(), us: z12() }, fc: { es: z12(), us: z12() } });
+const newByMarket = (): ByMarket => ({ sl: z12(), llc: z12(), corp: z12(), other: z12() });
+const newScen = (): Scen => ({ act: newByMarket(), fc: newByMarket() });
 
-/** Matriz del P&L: filas (categoría→subcat→cuenta) × 12 meses, por escenario (actual/forecast) y ES/US. */
+function entityOf(market: string | null): Entity | "other" {
+  const m = (market ?? "").trim().toUpperCase();
+  if (m.includes("CORP")) return "corp";
+  if (m.includes("LLC")) return "llc";
+  if (m === "SL" || m.includes("S.L") || m.endsWith(" SL")) return "sl";
+  return "other";
+}
+
+/** Matriz del P&L: filas (categoría→subcat→cuenta) × 12 meses, por escenario (actual/forecast) y sociedad. */
 export async function getPnlMatrix(year: number): Promise<PnlMatrix> {
   try {
     const query = `
       SELECT 
         'actual' as scenario,
-        pnl_l1, pnl_l2, sort_order, account,
+        pnl_l1, pnl_l2, sort_order, CAST(account AS STRING) AS account,
         ANY_VALUE(account_name) AS name, month, market,
         CAST(SUM(balance) AS FLOAT64) AS v
       FROM ${CONSOLIDATED_VIEW}
-      WHERE year = @year 
-      
-      
+      WHERE year = @year
       GROUP BY scenario, pnl_l1, pnl_l2, sort_order, account, month, market
     `;
     const [rows] = await bq().query({ query, location: LOCATION, params: { year } });
   const flat = rows as FlatRow[];
 
   const cats = new Map<string, CatNode>();
+  const unknownMarkets = new Set<string>();
   for (const r of flat) {
     const mi = r.month - 1;
     if (mi < 0 || mi > 11) continue;
     const bucket = r.scenario === "forecast" ? "fc" : "act";
-    const mkt = r.market === "US" ? "us" : "es";
+    const mkt = entityOf(r.market);
+    if (mkt === "other") unknownMarkets.add(String(r.market));
 
     let cat = cats.get(r.pnl_l1);
     if (!cat) {
@@ -102,20 +115,32 @@ export async function getPnlMatrix(year: number): Promise<PnlMatrix> {
     for (const node of [cat, sub, leaf] as Scen[]) node[bucket][mkt][mi] += r.v;
   }
 
+  if (unknownMarkets.size) console.warn(`Unknown market values in f_pnl ${year}:`, [...unknownMarkets]);
+
   const list = [...cats.values()].sort((a, b) => a.sort.localeCompare(b.sort, undefined, { numeric: true }));
   for (const c of list) {
     c.subs.sort((a, b) => a.sort.localeCompare(b.sort, undefined, { numeric: true }));
     for (const s of c.subs) {
       const abs = (n: LeafNode) =>
-        Math.abs(n.act.es.reduce((x, y) => x + y, 0) + n.act.us.reduce((x, y) => x + y, 0));
+        Math.abs(Object.values(n.act).reduce((t, arr) => t + arr.reduce((x, y) => x + y, 0), 0));
       s.accounts.sort((a, b) => abs(b) - abs(a));
     }
   }
 
-  // Último mes real = último mes con dato ACTUAL de USA.
-  let lastActual = 0;
-  for (const c of list) for (let i = 0; i < 12; i++) if (c.act.us[i] !== 0) lastActual = Math.max(lastActual, i + 1);
-  if (lastActual === 0) for (const c of list) for (let i = 0; i < 12; i++) if (c.act.es[i] !== 0) lastActual = Math.max(lastActual, i + 1);
+  // Último mes cerrado = el menor de los últimos meses con dato de SL y LLC (el cierre está completo
+  // cuando ambas operativas han cerrado). CORP no cuenta: la matriz puede no tener movimiento cada mes.
+  const lastWithData = (e: Entity | "other") => {
+    let last = 0;
+    for (const c of list) for (let i = 0; i < 12; i++) if (c.act[e][i] !== 0) last = Math.max(last, i + 1);
+    return last;
+  };
+  const opLasts = (["sl", "llc"] as const).map(lastWithData).filter((n) => n > 0);
+  let lastActual = opLasts.length
+    ? Math.min(...opLasts)
+    : Math.max(lastWithData("corp"), lastWithData("other"));
+  // El mes en curso nunca está cerrado (hay apuntes parciales y periodificaciones a futuro).
+  const now = new Date();
+  if (year === now.getFullYear()) lastActual = Math.min(lastActual, now.getMonth());
 
   return { cats: list, lastActualMonth: lastActual, year };
   } catch (e) {

@@ -1,10 +1,12 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { PnlMatrix, CatNode, SubNode, Scen, ByMarket } from "@/lib/bigquery";
+import { ENTITIES } from "@/lib/entities";
+import type { PnlMatrix, CatNode, SubNode, Scen, ByMarket, Entity } from "@/lib/bigquery";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-type Country = "all" | "es" | "us";
+type Country = "all" | Entity;
+const ENTITY_LABEL: Record<Entity, string> = { sl: "SL · Spain", llc: "LLC · USA", corp: "Corp" };
 const FIRST_MIN = 200; // ancho mínimo de la columna "Concept" (rellena el resto en desktop)
 const COL_W = 82; // ancho de columna de datos
 const FY_W = 108; // "Full Year" un poco más ancha
@@ -49,7 +51,7 @@ const INDICATOR_NAMES: Record<string, string> = {
 };
 
 const pickCountry = (bm: ByMarket, country: Country) =>
-  country === "es" ? bm.es : country === "us" ? bm.us : bm.es.map((v, i) => v + bm.us[i]);
+  country === "all" ? Object.values(bm).reduce((t, arr) => t.map((v, i) => v + arr[i])) : bm[country];
 function series(node: Scen, country: Country, lastActual: number, forecastOn: boolean): number[] {
   const a = pickCountry(node.act, country);
   const f = pickCountry(node.fc, country);
@@ -414,17 +416,11 @@ export default function PnlWorkspace({ matrices }: { matrices: PnlMatrix[] }) {
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-4">
           <div className="flex items-center gap-2">
-            <span className="text-xs font-medium uppercase tracking-wider text-muted">Country:</span>
-            <div className="flex items-center gap-1">
-              {([
-                { v: "all", emoji: "🌍", title: "Consolidated (ES + US)" },
-                { v: "es", emoji: "🇪🇸", title: "Spain" },
-                { v: "us", emoji: "🇺🇸", title: "USA" },
-              ] as { v: Country; emoji: string; title: string }[]).map((o) => (
-                <button key={o.v} onClick={() => setCountry(o.v)} title={o.title} aria-label={o.title} aria-pressed={country === o.v}
-                  className={`grid h-9 w-9 place-items-center rounded-lg text-lg transition-colors ${country === o.v ? "bg-propel/40 ring-1 ring-propel/60" : "hover:bg-pacer"}`}>
-                  <span aria-hidden>{o.emoji}</span>
-                </button>
+            <span className="text-xs font-medium uppercase tracking-wider text-muted">Entity:</span>
+            <div className="inline-flex overflow-hidden rounded-md border border-line">
+              {([["all", "Consolidated"], ...ENTITIES.map((e) => [e, ENTITY_LABEL[e]])] as [Country, string][]).map(([v, label]) => (
+                <button key={v} onClick={() => setCountry(v)} aria-pressed={country === v}
+                  className={`px-3 py-1.5 text-xs font-medium whitespace-nowrap transition-colors ${country === v ? "bg-nav text-white" : "bg-surface text-muted hover:text-ink"}`}>{label}</button>
               ))}
             </div>
           </div>
@@ -548,7 +544,7 @@ export default function PnlWorkspace({ matrices }: { matrices: PnlMatrix[] }) {
       </div>
 
       <p className="mt-3 text-xs text-muted/80">
-        Amounts in € · {country === "all" ? "consolidated ES+US" : country === "es" ? "Spain only" : "USA only"}. Closed months (through {MONTHS[lastActualMonth - 1]} {year}) = <strong>actual</strong>; {forecastOn ? <>open months in <span className="font-semibold text-propel-ink">blue = forecast</span>.</> : <>open months at 0 (turn on <strong>Forecast</strong>).</>} Ratio tables share columns with the P&L — expand a Q and all expand. EBITDA = Revenues + COGS + SG&A (before D&A and financials). Margin of services = Consulting − Operations payroll.
+        Amounts in € · {country === "all" ? "consolidated SL + LLC + Corp" : `${ENTITY_LABEL[country]} only`}. Closed months (through {MONTHS[lastActualMonth - 1]} {year}) = <strong>actual</strong>; {forecastOn ? <>open months in <span className="font-semibold text-propel-ink">blue = forecast</span>.</> : <>open months at 0 (turn on <strong>Forecast</strong>).</>} Ratio tables share columns with the P&L — expand a Q and all expand. EBITDA = Revenues + COGS + SG&A (before D&A and financials). Margin of services = Consulting − Operations payroll.
       </p>
     </div>
   );
@@ -667,18 +663,15 @@ function AreaChart({ data, label, height = 200 }: { data: number[]; label: strin
 type KpiDetailsData = {
   kpiType: "revenue" | "result" | "margin";
   value: string;
-  esActual: number;
-  usActual: number;
-  esForecast?: number;
-  usForecast?: number;
+  actual: Record<Entity, number>;
+  forecast?: Record<Entity, number>;
   components?: Array<{ label: string; value: number }>;
 };
 
 function KpiDetails({ data }: { data: KpiDetailsData }) {
-  const total = data.esActual + data.usActual;
-  const totalFc = (data.esForecast ?? 0) + (data.usForecast ?? 0);
-  const esShare = total ? ((data.esActual / total) * 100).toFixed(1) : "—";
-  const usShare = total ? ((data.usActual / total) * 100).toFixed(1) : "—";
+  const total = ENTITIES.reduce((t, e) => t + data.actual[e], 0);
+  const share = (v: number) => (total ? ((v / total) * 100).toFixed(1) : "—");
+  const fc = data.forecast;
 
   return (
     <div className="space-y-6">
@@ -688,31 +681,27 @@ function KpiDetails({ data }: { data: KpiDetailsData }) {
       </div>
 
       <div className="space-y-3">
-        <div className="text-xs font-medium uppercase tracking-wider text-muted">Breakdown by Market</div>
+        <div className="text-xs font-medium uppercase tracking-wider text-muted">Breakdown by Entity</div>
         <div className="space-y-2 rounded-lg border border-line p-3">
-          <div className="flex items-center justify-between">
-            <span className="text-sm text-ink">Spain</span>
-            <span className="font-semibold tabular-nums text-ink">{eur0(data.esActual)} <span className="text-xs text-muted">({esShare}%)</span></span>
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="text-sm text-ink">USA</span>
-            <span className="font-semibold tabular-nums text-ink">{eur0(data.usActual)} <span className="text-xs text-muted">({usShare}%)</span></span>
-          </div>
+          {ENTITIES.map((e) => (
+            <div key={e} className="flex items-center justify-between">
+              <span className="text-sm text-ink">{ENTITY_LABEL[e]}</span>
+              <span className="font-semibold tabular-nums text-ink">{eur0(data.actual[e])} <span className="text-xs text-muted">({share(data.actual[e])}%)</span></span>
+            </div>
+          ))}
         </div>
       </div>
 
-      {data.esForecast !== undefined && (data.esForecast !== 0 || data.usForecast !== 0) && (
+      {fc && ENTITIES.some((e) => fc[e] !== 0) && (
         <div className="space-y-3">
           <div className="text-xs font-medium uppercase tracking-wider text-muted">Forecast (Open Months)</div>
           <div className="space-y-2 rounded-lg border border-line p-3">
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-ink">Spain</span>
-              <span className="font-semibold tabular-nums text-propel-ink">{eur0(data.esForecast ?? 0)}</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-ink">USA</span>
-              <span className="font-semibold tabular-nums text-propel-ink">{eur0(data.usForecast ?? 0)}</span>
-            </div>
+            {ENTITIES.map((e) => (
+              <div key={e} className="flex items-center justify-between">
+                <span className="text-sm text-ink">{ENTITY_LABEL[e]}</span>
+                <span className="font-semibold tabular-nums text-propel-ink">{eur0(fc[e])}</span>
+              </div>
+            ))}
           </div>
         </div>
       )}
