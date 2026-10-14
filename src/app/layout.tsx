@@ -27,26 +27,29 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   return (
     <html lang="es" className={`${newScience.variable} h-full antialiased`}>
       <body className="min-h-full bg-pacer text-ink">
-        <header className="bg-nav">
-          <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-6">
+        <header className="sticky top-0 z-50 bg-nav">
+          <div className="mx-auto flex h-14 max-w-7xl items-center gap-6 px-3 sm:px-6">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/brand/logo-pacer-white.svg" alt="PropellingTech" className="h-5 w-auto" />
-            <div className="flex items-center gap-4">
-              {email && (
+            <img src="/brand/logo-pacer-white.svg" alt="PropellingTech" className="h-5 w-auto shrink-0" />
+            {email && (
+              <div className="h-full min-w-0 flex-1 overflow-x-auto">
+                <Navigator />
+              </div>
+            )}
+            <div className="ml-auto flex shrink-0 items-center gap-4">
+              {email ? (
                 <form method="post" action="/api/logout" className="flex items-center gap-3">
-                  <span className="hidden text-xs text-white/60 sm:inline">{email}</span>
+                  <span className="hidden text-xs text-white/60 md:inline">{email}</span>
                   <button type="submit" className="text-xs font-medium text-white/80 hover:text-white">
                     Sign out
                   </button>
                 </form>
+              ) : (
+                <span className="text-xs font-medium uppercase tracking-[0.18em] text-white/60">Reporting</span>
               )}
-              <span className="text-xs font-medium uppercase tracking-[0.18em] text-white/60">
-                Reporting
-              </span>
             </div>
           </div>
         </header>
-        {email && <Navigator />}
         {children}
       </body>
     </html>

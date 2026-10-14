@@ -3,43 +3,31 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
+const TABS = [
+  { href: "/", label: "P&L", active: (p: string) => p === "/" },
+  { href: "/income-recognition", label: "Income Recognition", active: (p: string) => p.startsWith("/income-recognition") },
+];
+
+// Pestañas dentro de la barra Tech Blue: activa en blanco con subrayado Propel Blue.
 export default function Navigator() {
   const pathname = usePathname();
-  const isPnl = pathname === "/" || pathname === "/pnl";
-  const isIncomeRecognition = pathname.includes("income-recognition");
-
   return (
-    <nav className="sticky top-0 z-50 bg-surface border-b border-line">
-      <div className="mx-auto max-w-7xl px-3 sm:px-6 sm:py-0">
-        <div className="flex h-16 items-center justify-between">
-          <div className="flex items-center gap-8">
-            <div className="text-lg font-semibold text-ink">Propelling</div>
-            <div className="flex gap-1">
-              <Link
-                href="/"
-                className={`px-4 py-2 text-sm font-medium rounded transition-all ${
-                  isPnl
-                    ? "bg-propel-primary text-white"
-                    : "text-muted hover:text-ink hover:bg-pacer/50"
-                }`}
-              >
-                P&L Matrix
-              </Link>
-              <Link
-                href="/income-recognition"
-                className={`px-4 py-2 text-sm font-medium rounded transition-all ${
-                  isIncomeRecognition
-                    ? "bg-propel-primary text-white"
-                    : "text-muted hover:text-ink hover:bg-pacer/50"
-                }`}
-              >
-                Income Recognition
-              </Link>
-            </div>
-          </div>
-          <div className="text-xs text-muted">Reporting • 2026</div>
-        </div>
-      </div>
+    <nav className="flex h-full items-stretch gap-1">
+      {TABS.map((t) => {
+        const on = t.active(pathname);
+        return (
+          <Link
+            key={t.href}
+            href={t.href}
+            aria-current={on ? "page" : undefined}
+            className={`flex items-center border-b-2 px-3 text-sm font-medium whitespace-nowrap transition-colors ${
+              on ? "border-propel text-white" : "border-transparent text-white/60 hover:text-white"
+            }`}
+          >
+            {t.label}
+          </Link>
+        );
+      })}
     </nav>
   );
 }
