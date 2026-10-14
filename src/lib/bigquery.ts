@@ -9,8 +9,12 @@ export type { Entity } from "./entities";
 // - En Vercel usará las credenciales del JSON en GOOGLE_APPLICATION_CREDENTIALS.
 const PROJECT = process.env.GCP_PROJECT ?? "propellingtech-datalake";
 const LOCATION = process.env.BQ_LOCATION ?? "EU";
-const CONSOLIDATED_VIEW =
-  "`propellingtech-datalake.03_gold_holded.tbl-gld-fin-f_pnl`";
+const PNL_TABLE = "`propellingtech-datalake.03_gold_holded.tbl-gld-fin-f_pnl`";
+// Forecast cargado desde el Excel de FCST (por cuenta y mes; ES en EUR, US en USD).
+const FORECAST_TABLE = "`propellingtech-datalake.03_gold_finance.tbl-gld-fin-f_pnl_forecast`";
+const PNL_MASTER = "`propellingtech-datalake.02_silver_holded.tbl-slv-fin-pnl_master`";
+const CHART_OF_ACCOUNTS = "`propellingtech-datalake.02_silver_holded.tbl-slv-fin-chart_of_accounts`";
+const FX_RATES = "`propellingtech-datalake.03_gold_finance.tbl-gld-fin-fx_rates`";
 
 let client: BigQuery | null = null;
 function bq(): BigQuery {
@@ -70,15 +74,35 @@ function entityOf(market: string | null): Entity | "other" {
 /** Matriz del P&L: filas (categoría→subcat→cuenta) × 12 meses, por escenario (actual/forecast) y sociedad. */
 export async function getPnlMatrix(year: number): Promise<PnlMatrix> {
   try {
+    // Forecast: market ES → SL, US → LLC (la CORP no tiene forecast); USD → EUR con fx_rates del mes.
     const query = `
-      SELECT 
-        'actual' as scenario,
+      WITH tax AS (
+        SELECT CAST(SPLIT(id_account, '-')[OFFSET(1)] AS INT64) AS account,
+               ANY_VALUE(pnl_l1) AS pnl_l1, ANY_VALUE(pnl_l2) AS pnl_l2, ANY_VALUE(sort_order) AS sort_order
+        FROM ${PNL_MASTER} GROUP BY account
+      ),
+      names AS (SELECT account, ANY_VALUE(name) AS name FROM ${CHART_OF_ACCOUNTS} WHERE account IS NOT NULL GROUP BY account)
+      SELECT
+        'actual' AS scenario,
         pnl_l1, pnl_l2, sort_order, CAST(account AS STRING) AS account,
         ANY_VALUE(account_name) AS name, month, market,
         CAST(SUM(balance) AS FLOAT64) AS v
-      FROM ${CONSOLIDATED_VIEW}
+      FROM ${PNL_TABLE}
       WHERE year = @year
       GROUP BY scenario, pnl_l1, pnl_l2, sort_order, account, month, market
+      UNION ALL
+      SELECT
+        'forecast' AS scenario,
+        t.pnl_l1, t.pnl_l2, t.sort_order, CAST(fc.account AS STRING) AS account,
+        ANY_VALUE(n.name) AS name, fc.month,
+        CASE fc.market WHEN 'ES' THEN 'SL' WHEN 'US' THEN 'LLC' ELSE fc.market END AS market,
+        CAST(SUM(IF(fc.currency = 'USD', fc.balance_native / fx.usd_per_eur, fc.balance_native)) AS FLOAT64) AS v
+      FROM ${FORECAST_TABLE} fc
+      JOIN tax t USING (account)
+      LEFT JOIN names n USING (account)
+      LEFT JOIN ${FX_RATES} fx USING (year_month)
+      WHERE fc.year = @year
+      GROUP BY scenario, t.pnl_l1, t.pnl_l2, t.sort_order, fc.account, fc.month, market
     `;
     const [rows] = await bq().query({ query, location: LOCATION, params: { year } });
   const flat = rows as FlatRow[];
