@@ -1,36 +1,53 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# PropellingTech · Reporting
 
-## Getting Started
+Internal financial reporting for the Propelling partners. Next.js (App Router) on Vercel, reading BigQuery
+(`propellingtech-datalake`, EU) on the server only — credentials never reach the browser.
 
-First, run the development server:
+## Pages
+
+- **`/` — P&L.** Rows category → subcategory → account, by month / quarter / half / full year, growth vs prior
+  period and prior year, efficiency ratios and EBITDA. Filter by legal entity: **SL** (Spain, Holded), **LLC**
+  (USA, QuickBooks), **Corp** (parent) or consolidated. *Forecast* fills open months.
+- **`/income-recognition` — Income Recognition.** Invoicing / non-invoicing days and IR (ID days × project rate)
+  per client, with drill-down to projects. Year and closing month are selectable.
+
+The last closed month is always the previous calendar month at most (`src/lib/period.ts`).
+
+## Data sources
+
+| Use | Table |
+|-----|-------|
+| P&L actual | `03_gold_holded.tbl-gld-fin-f_pnl` (`market` = SL / LLC / CORP) |
+| P&L forecast | `03_gold_finance.tbl-gld-fin-f_pnl_forecast` (ES → SL, US → LLC; USD converted with `tbl-gld-fin-fx_rates`) |
+| Taxonomy / names | `02_silver_holded.tbl-slv-fin-pnl_master`, `tbl-slv-fin-chart_of_accounts` |
+| Income Recognition | `02_silver_holded.tbl-slv-ops-agenda` + `tbl-slv-ops-master-projects` |
+
+All queries live in `src/lib/bigquery.ts`.
+
+## Access
+
+Every page and API route requires login (`src/middleware.ts`). Email allowlist + one shared password, signed
+session cookie valid 30 days. Configured with environment variables:
+
+| Variable | Content |
+|----------|---------|
+| `ALLOWED_EMAILS` | Comma-separated authorized emails. Removing one revokes access on the next request. |
+| `APP_PASSWORD` | Shared password. |
+| `AUTH_SECRET` | Random secret that signs the session cookie (`openssl rand -base64 48`). |
+| `GOOGLE_APPLICATION_CREDENTIALS` | Service-account JSON (inline) for BigQuery. Not needed locally. |
+
+## Local development
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+gcloud auth application-default login   # BigQuery via your own Google account
+ALLOWED_EMAILS=you@propellingtech.com APP_PASSWORD=dev AUTH_SECRET=dev npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open http://localhost:3000.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Deploy
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Pushing to `main` deploys to Vercel (team `propelling-tech`, project `propellingtech-reporting`).
+Environment variables are managed in Vercel → Settings → Environment Variables.
 
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Brand and visual rules: [`BRAND.md`](BRAND.md).
