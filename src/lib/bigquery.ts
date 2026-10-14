@@ -1,5 +1,6 @@
 import { BigQuery } from "@google-cloud/bigquery";
 import type { Entity } from "./entities";
+import { closingMonthOf } from "./period";
 
 export type { Entity } from "./entities";
 
@@ -139,8 +140,7 @@ export async function getPnlMatrix(year: number): Promise<PnlMatrix> {
     ? Math.min(...opLasts)
     : Math.max(lastWithData("corp"), lastWithData("other"));
   // El mes en curso nunca está cerrado (hay apuntes parciales y periodificaciones a futuro).
-  const now = new Date();
-  if (year === now.getFullYear()) lastActual = Math.min(lastActual, now.getMonth());
+  lastActual = Math.min(lastActual, closingMonthOf(year));
 
   return { cats: list, lastActualMonth: lastActual, year };
   } catch (e) {
@@ -160,7 +160,8 @@ export async function getAvailableYears(): Promise<number[]> {
     return (rows as { year: number }[]).map((r) => r.year).filter((y) => y > 0);
   } catch (e) {
     console.error("Error getting available years:", e);
-    return [2026, 2025]; // Fallback
+    const y = new Date().getFullYear();
+    return [y, y - 1]; // Fallback
   }
 }
 
@@ -187,14 +188,8 @@ export type ProjectReportRow = {
   accumulated: Metrics;
 };
 
-async function getClosingMonth(year: number): Promise<number> {
-  return 7; // Hardcoded to July for now
-}
-
 /** Income Recognition Report - aggregated by Client (closing month + accumulated) */
-export async function getIncomeRecognitionByClient(year: number): Promise<ClientReportRow[]> {
-  const closingMonth = await getClosingMonth(year);
-
+export async function getIncomeRecognitionByClient(year: number, closingMonth: number): Promise<ClientReportRow[]> {
   const query = `
     WITH agenda_with_rate AS (
       SELECT
@@ -263,9 +258,7 @@ export async function getIncomeRecognitionByClient(year: number): Promise<Client
 }
 
 /** Income Recognition Report - drill-down by Project within a Client (closing month + accumulated) */
-export async function getIncomeRecognitionByProject(year: number, clientName: string): Promise<ProjectReportRow[]> {
-  const closingMonth = await getClosingMonth(year);
-
+export async function getIncomeRecognitionByProject(year: number, closingMonth: number, clientName: string): Promise<ProjectReportRow[]> {
   const query = `
     WITH agenda_with_rate AS (
       SELECT

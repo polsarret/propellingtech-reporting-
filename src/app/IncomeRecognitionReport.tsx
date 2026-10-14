@@ -32,9 +32,11 @@ type SortKey = "name" | "monthly_id" | "monthly_nid" | "monthly_dev" | "monthly_
 
 interface IncomeRecognitionReportProps {
   clients: ClientReportRow[];
+  year: number;
+  closingMonth: number;
 }
 
-export default function IncomeRecognitionReport({ clients }: IncomeRecognitionReportProps) {
+export default function IncomeRecognitionReport({ clients, year, closingMonth }: IncomeRecognitionReportProps) {
   const [selectedClient, setSelectedClient] = useState<string | null>(null);
   const [projects, setProjects] = useState<ProjectReportRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -42,7 +44,7 @@ export default function IncomeRecognitionReport({ clients }: IncomeRecognitionRe
   const handleClientClick = async (clientName: string) => {
     setLoading(true);
     try {
-      const response = await fetch(`/api/income-recognition/projects?client=${encodeURIComponent(clientName)}`);
+      const response = await fetch(`/api/income-recognition/projects?client=${encodeURIComponent(clientName)}&year=${year}&month=${closingMonth}`);
       const data = await response.json();
       setProjects(data);
       setSelectedClient(clientName);
@@ -61,7 +63,7 @@ export default function IncomeRecognitionReport({ clients }: IncomeRecognitionRe
   return (
     <div className="space-y-6">
       {selectedClient === null ? (
-        <ClientTable clients={clients} onSelectClient={handleClientClick} />
+        <ClientTable clients={clients} year={year} closingMonth={closingMonth} onSelectClient={handleClientClick} />
       ) : (
         <>
           <div className="flex items-center gap-3">
@@ -74,15 +76,14 @@ export default function IncomeRecognitionReport({ clients }: IncomeRecognitionRe
             <h2 className="text-lg font-semibold text-ink">{selectedClient}</h2>
             {loading && <span className="text-xs text-muted">Loading...</span>}
           </div>
-          {projects.length > 0 && <ProjectTable projects={projects} />}
+          {projects.length > 0 && <ProjectTable projects={projects} year={year} closingMonth={closingMonth} />}
         </>
       )}
     </div>
   );
 }
 
-function ClientTable({ clients, onSelectClient }: { clients: ClientReportRow[]; onSelectClient: (name: string) => void }) {
-  const closingMonth = clients[0]?.closingMonth || 7;
+function ClientTable({ clients, year, closingMonth, onSelectClient }: { clients: ClientReportRow[]; year: number; closingMonth: number; onSelectClient: (name: string) => void }) {
   const monthName = MONTHS[closingMonth - 1];
   const [sortBy, setSortBy] = useState<SortKey>("name");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
@@ -133,7 +134,7 @@ function ClientTable({ clients, onSelectClient }: { clients: ClientReportRow[]; 
   return (
     <div className="space-y-3">
       <div className="text-sm text-muted">
-        Closing Month: <span className="font-semibold text-ink">{monthName} 2026</span>
+        Closing Month: <span className="font-semibold text-ink">{monthName} {year}</span>
       </div>
       <div className="overflow-x-auto border border-line rounded-lg bg-surface">
         <table className="w-full text-sm">
@@ -203,8 +204,7 @@ function ClientTable({ clients, onSelectClient }: { clients: ClientReportRow[]; 
   );
 }
 
-function ProjectTable({ projects }: { projects: ProjectReportRow[] }) {
-  const closingMonth = projects[0]?.closingMonth || 7;
+function ProjectTable({ projects, year, closingMonth }: { projects: ProjectReportRow[]; year: number; closingMonth: number }) {
   const monthName = MONTHS[closingMonth - 1];
   const [sortBy, setSortBy] = useState<SortKey>("name");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
@@ -255,7 +255,7 @@ function ProjectTable({ projects }: { projects: ProjectReportRow[] }) {
   return (
     <div className="space-y-3">
       <div className="text-sm text-muted">
-        Closing Month: <span className="font-semibold text-ink">{monthName} 2026</span>
+        Closing Month: <span className="font-semibold text-ink">{monthName} {year}</span>
       </div>
       <div className="overflow-x-auto border border-line rounded-lg bg-surface">
         <table className="w-full text-sm">
@@ -267,18 +267,18 @@ function ProjectTable({ projects }: { projects: ProjectReportRow[] }) {
             </tr>
             <tr className="text-xs uppercase tracking-wider text-muted border-b border-line/40">
               <th className="sticky left-0 z-10 bg-pacer px-4 py-2 text-left font-medium cursor-pointer hover:text-ink" onClick={() => handleSort("name")}>Project <SortIndicator column="name" /></th>
+              <th className="px-2 py-2 text-center font-bold text-[10px] cursor-pointer hover:text-ink" onClick={() => handleSort("monthly_ir")}>IR <SortIndicator column="monthly_ir" /></th>
+              <th className="px-2 py-2 text-center font-bold text-[10px] cursor-pointer hover:text-ink" onClick={() => handleSort("monthly_net_rate")}>Net Rate <SortIndicator column="monthly_net_rate" /></th>
               <th className="px-2 py-2 text-center font-medium text-[10px] cursor-pointer hover:text-ink" onClick={() => handleSort("monthly_id")}>ID <SortIndicator column="monthly_id" /></th>
               <th className="px-2 py-2 text-center font-medium text-[10px] cursor-pointer hover:text-ink" onClick={() => handleSort("monthly_nid")}>NID <SortIndicator column="monthly_nid" /></th>
               <th className="px-2 py-2 text-center font-medium text-[10px] cursor-pointer hover:text-ink" onClick={() => handleSort("monthly_dev")}>Dev% <SortIndicator column="monthly_dev" /></th>
-              <th className="px-2 py-2 text-center font-medium text-[10px] cursor-pointer hover:text-ink" onClick={() => handleSort("monthly_ir")}>IR <SortIndicator column="monthly_ir" /></th>
               <th className="px-2 py-2 text-center font-medium text-[10px] cursor-pointer hover:text-ink" onClick={() => handleSort("monthly_rate")}>Rate <SortIndicator column="monthly_rate" /></th>
-              <th className="px-2 py-2 text-center font-medium text-[10px] cursor-pointer hover:text-ink" onClick={() => handleSort("monthly_net_rate")}>Net Rate <SortIndicator column="monthly_net_rate" /></th>
-              <th className="px-2 py-2 text-center font-medium text-[10px] cursor-pointer hover:text-ink border-l-2 border-slate-300" onClick={() => handleSort("accumulated_id")}>ID <SortIndicator column="accumulated_id" /></th>
+              <th className="px-2 py-2 text-center font-bold text-[10px] cursor-pointer hover:text-ink border-l-2 border-slate-300" onClick={() => handleSort("accumulated_ir")}>IR <SortIndicator column="accumulated_ir" /></th>
+              <th className="px-2 py-2 text-center font-bold text-[10px] cursor-pointer hover:text-ink" onClick={() => handleSort("accumulated_net_rate")}>Net Rate <SortIndicator column="accumulated_net_rate" /></th>
+              <th className="px-2 py-2 text-center font-medium text-[10px] cursor-pointer hover:text-ink" onClick={() => handleSort("accumulated_id")}>ID <SortIndicator column="accumulated_id" /></th>
               <th className="px-2 py-2 text-center font-medium text-[10px] cursor-pointer hover:text-ink" onClick={() => handleSort("accumulated_nid")}>NID <SortIndicator column="accumulated_nid" /></th>
               <th className="px-2 py-2 text-center font-medium text-[10px] cursor-pointer hover:text-ink" onClick={() => handleSort("accumulated_dev")}>Dev% <SortIndicator column="accumulated_dev" /></th>
-              <th className="px-2 py-2 text-center font-medium text-[10px] cursor-pointer hover:text-ink" onClick={() => handleSort("accumulated_ir")}>IR <SortIndicator column="accumulated_ir" /></th>
               <th className="px-2 py-2 text-center font-medium text-[10px] cursor-pointer hover:text-ink" onClick={() => handleSort("accumulated_rate")}>Rate <SortIndicator column="accumulated_rate" /></th>
-              <th className="px-2 py-2 text-center font-medium text-[10px] cursor-pointer hover:text-ink" onClick={() => handleSort("accumulated_net_rate")}>Net Rate <SortIndicator column="accumulated_net_rate" /></th>
             </tr>
           </thead>
           <tbody>
