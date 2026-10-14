@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
+import { cookies } from "next/headers";
+import { SESSION_COOKIE, readSession } from "@/lib/session";
 import Navigator from "./Navigator";
 import "./globals.css";
 
@@ -19,7 +21,9 @@ export const metadata: Metadata = {
   description: "P&L consolidado y reporting financiero · PropellingTech",
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const email = await readSession((await cookies()).get(SESSION_COOKIE)?.value);
+
   return (
     <html lang="es" className={`${newScience.variable} h-full antialiased`}>
       <body className="min-h-full bg-pacer text-ink">
@@ -27,12 +31,22 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-6">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src="/brand/logo-pacer-white.svg" alt="PropellingTech" className="h-5 w-auto" />
-            <span className="text-xs font-medium uppercase tracking-[0.18em] text-white/60">
-              Reporting
-            </span>
+            <div className="flex items-center gap-4">
+              {email && (
+                <form method="post" action="/api/logout" className="flex items-center gap-3">
+                  <span className="hidden text-xs text-white/60 sm:inline">{email}</span>
+                  <button type="submit" className="text-xs font-medium text-white/80 hover:text-white">
+                    Sign out
+                  </button>
+                </form>
+              )}
+              <span className="text-xs font-medium uppercase tracking-[0.18em] text-white/60">
+                Reporting
+              </span>
+            </div>
           </div>
         </header>
-        <Navigator />
+        {email && <Navigator />}
         {children}
       </body>
     </html>
