@@ -1,15 +1,16 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ENTITIES } from "@/lib/entities";
 import type { PnlMatrix, CatNode, SubNode, Scen, ByMarket, Entity } from "@/lib/bigquery";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 type Country = "all" | Entity;
 const ENTITY_LABEL: Record<Entity, string> = { sl: "SL · Spain", llc: "LLC · USA", corp: "Corp" };
-const FIRST_MIN = 200; // ancho mínimo de la columna "Concept" (rellena el resto en desktop)
+const FIRST_MIN = 280; // ancho mínimo de "Concept" (caben las categorías y ratios más largos); en desktop rellena el resto
 const COL_W = 82; // ancho de columna de datos
 const FY_W = 108; // "Full Year" un poco más ancha
+const CHART_W = 36; // columna del icono de gráfico
 const colW = (c: Col) => (c.kind === "fy" ? FY_W : COL_W);
 
 function fmt(n: number): string {
@@ -19,6 +20,7 @@ function fmt(n: number): string {
   if (a >= 1000) return (n / 1000).toLocaleString("en-US", { maximumFractionDigits: 1 }) + "k";
   return Math.round(n).toLocaleString("en-US");
 }
+const eurShort = (n: number) => `${n < 0 ? "−" : ""}€${fmt(Math.abs(n))}`;
 const eur0 = (n: number) => new Intl.NumberFormat("en-US", { style: "currency", currency: "EUR", maximumFractionDigits: 0 }).format(n);
 const pct = (n: number | null) => (n == null || !isFinite(n) ? "–" : `${(n * 100).toFixed(1)}%`);
 const growthStr = (n: number | null) => (n == null || !isFinite(n) ? "–" : `${n >= 0 ? "+" : ""}${(n * 100).toFixed(0)}%`);
@@ -68,6 +70,12 @@ const valueFor = (months: number[], col: Col): number => {
   if (col.kind === "h") return col.idx === 0 ? s(0, 5) : s(6, 11);
   return s(0, 11);
 };
+// Fila visible solo si tiene algún importe en la vista actual (entidad + forecast): al filtrar por SL,
+// las cuentas de la LLC (y al revés) saldrían enteras a 0.
+// Solo se muestra el número de cuenta del PGC (SL/Holded, 8 dígitos). Los de QuickBooks (LLC/Corp)
+// son IDs internos (hasta 19 dígitos) que no aportan nada al lector.
+const showAccountNumber = (account: string) => /^\d{8}$/.test(account);
+const hasValues = (months: number[]) => months.some((v) => Math.abs(v) >= 0.5);
 const addArr = (a: number[], b: number[]) => a.map((v, i) => v + b[i]);
 const subArr = (a: number[], b: number[]) => a.map((v, i) => v - b[i]);
 const z12 = () => new Array(12).fill(0);
@@ -91,13 +99,26 @@ function buildMetrics(m: PnlMatrix, seriesFn: (n: Scen) => number[]): Record<str
   return { rev, services, licensing, ops, bdev, mgmt, labor, cogsNL, opex, ebitda, marginSvc: addArr(services, ops) };
 }
 
-function Chevron({ open }: { open: boolean }) {
+function Chevron({ open, large = false }: { open: boolean; large?: boolean }) {
   return (
-    <span aria-hidden className="inline-block w-3 text-propel-ink transition-transform duration-150" style={{ transform: open ? "rotate(90deg)" : "rotate(0deg)" }}>
+    <span aria-hidden className={`inline-block text-center text-propel-ink transition-transform duration-150 ${large ? "w-6 text-xl leading-none" : "w-3"}`} style={{ transform: open ? "rotate(90deg)" : "rotate(0deg)" }}>
       ▸
     </span>
   );
 }
+// Misma celda en todas las tablas: con table-layout fixed + ColGroup, las columnas quedan alineadas.
+function ChartCell({ onClick, title = "View chart" }: { onClick?: () => void; title?: string }) {
+  return (
+    <td className="p-0 text-center">
+      {onClick && (
+        <button onClick={(e) => { e.stopPropagation(); onClick(); }} className="text-xs text-muted/50 transition-colors hover:text-propel-ink" title={title}>
+          📈
+        </button>
+      )}
+    </td>
+  );
+}
+
 function ColGroup({ cols }: { cols: Col[] }) {
   return (
     <colgroup>
@@ -105,6 +126,7 @@ function ColGroup({ cols }: { cols: Col[] }) {
       {cols.map((c, i) => (
         <col key={i} style={{ width: colW(c) }} />
       ))}
+      <col style={{ width: CHART_W }} />
     </colgroup>
   );
 }
@@ -122,6 +144,25 @@ export default function PnlWorkspace({ matrices }: { matrices: PnlMatrix[] }) {
   const [quarters, setQuarters] = useState<Set<number>>(new Set());
   const [openedRatio, setOpenedRatio] = useState<{ label: string; col: Col; details: RatioDetails } | null>(null);
   const [openedChart, setOpenedChart] = useState<{ label: string; data: number[] } | null>(null);
+  // La cabecera de columnas vive fuera del contenedor con scroll horizontal (si no, no puede ser sticky
+  // respecto a la página); su scroll horizontal se sincroniza con el de las tablas.
+  const headRef = useRef<HTMLDivElement>(null);
+  // Barra de filtros fija: al quedarse pegada muestra los KPIs en versión compacta. La cabecera de
+  // columnas se pega justo debajo (top = barra de navegación 56px + alto de esta barra).
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  const barRef = useRef<HTMLDivElement>(null);
+  const [stuck, setStuck] = useState(false);
+  const [barH, setBarH] = useState(0);
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    const bar = barRef.current;
+    if (!sentinel || !bar) return;
+    const io = new IntersectionObserver(([e]) => setStuck(!e.isIntersecting), { rootMargin: "-56px 0px 0px 0px" });
+    io.observe(sentinel);
+    const ro = new ResizeObserver(() => setBarH(bar.offsetHeight));
+    ro.observe(bar);
+    return () => { io.disconnect(); ro.disconnect(); };
+  }, []);
 
   const matrix = matrices.find((m) => m.year === year) ?? matrices[0];
   const { cats, lastActualMonth } = matrix;
@@ -195,14 +236,17 @@ export default function PnlWorkspace({ matrices }: { matrices: PnlMatrix[] }) {
   const revenueFY = valueFor(metricsByYear[year]?.rev ?? z12(), { kind: "fy", label: "" });
   const result = valueFor(grand, { kind: "fy", label: "" });
   const margin = revenueFY ? result / revenueFY : 0;
+  const latest = matrices[0];
+  const lastClose = latest.lastActualMonth > 0 ? `${MONTHS[latest.lastActualMonth - 1]} ${latest.year}` : null;
   const kpiSuffix = forecastOn ? "FY (actual+fcst)" : `YTD actual · Jan–${MONTHS[lastActualMonth - 1]}`;
 
   const blend = (node: Scen) => series(node, country, lastActualMonth, forecastOn);
   const cellClass = (c: Col, extra = "") => `px-3 py-2 text-right tabular-nums whitespace-nowrap ${bgFor(c.kind)} ${colColor(c)} ${extra}`;
   const onChart = (label: string, data: number[]) => setOpenedChart({ label, data });
   const rp: RowProps = { cols, rows, toggleRow, blend, cellClass, onChart };
-  const tableMinWidth = FIRST_MIN + cols.reduce((s, c) => s + colW(c), 0);
-  const tableStyle = { tableLayout: "auto" as const, width: "100%" };
+  // Layout fijo: las 3 tablas comparten exactamente la geometría del ColGroup (Concept se queda el resto).
+  const tableMinWidth = FIRST_MIN + cols.reduce((s, c) => s + colW(c), 0) + CHART_W;
+  const tableStyle = { tableLayout: "fixed" as const, width: "100%", minWidth: tableMinWidth };
 
   const priorYear = years.includes(year - 1) ? year - 1 : null;
   const prevCol = (c: Col): { yr: number; col: Col } => {
@@ -295,10 +339,12 @@ export default function PnlWorkspace({ matrices }: { matrices: PnlMatrix[] }) {
       <th className="sticky left-0 z-10 bg-pacer px-4 py-2.5 text-left font-medium">{label}</th>
       {cols.map((c, i) => (
         <th key={i} onClick={() => c.kind === "q" && toggleQ(c.idx)}
-          className={`px-3 py-2.5 text-right font-medium whitespace-nowrap ${bgFor(c.kind)} ${colColor(c) || (c.kind === "q" || c.kind === "fy" ? "text-ink" : "")} ${c.kind === "q" ? "cursor-pointer" : ""}`}>
-          {c.kind === "q" && <Chevron open={quarters.has(c.idx)} />} {c.label}
+          title={c.kind === "q" ? (quarters.has(c.idx) ? "Hide months" : "Show months") : undefined}
+          className={`px-3 py-2.5 text-right font-medium whitespace-nowrap ${bgFor(c.kind)} ${colColor(c) || (c.kind === "q" || c.kind === "fy" ? "text-ink" : "")} ${c.kind === "q" ? "cursor-pointer select-none hover:text-propel-ink" : ""}`}>
+          {c.kind === "q" && <Chevron open={quarters.has(c.idx)} large />} {c.label}
         </th>
       ))}
+      <th aria-hidden />
     </tr>
   );
 
@@ -314,7 +360,7 @@ export default function PnlWorkspace({ matrices }: { matrices: PnlMatrix[] }) {
     });
     return (
       <tr className={`border-b border-line/60 ${strong ? "font-semibold text-ink" : "text-ink/90"}`}>
-        <th className={`sticky left-0 z-10 bg-surface px-4 py-1.5 pl-6 text-left ${strong ? "font-semibold" : "font-normal"}`}>{label}</th>
+        <th className={`sticky left-0 z-10 truncate bg-surface px-4 py-1.5 pl-6 text-left ${strong ? "font-semibold" : "font-normal"}`} title={label}>{label}</th>
         {cols.map((c, i) => {
           const v = get(c);
           const num = typeof v === "number" ? v : null;
@@ -341,17 +387,13 @@ export default function PnlWorkspace({ matrices }: { matrices: PnlMatrix[] }) {
             </td>
           );
         })}
-        <td className="px-0 py-1 text-center w-4">
-          <button onClick={(e) => { e.stopPropagation(); onChart(label, ratioData); }} className="text-xs text-muted/50 hover:text-propel-ink transition-colors" title="View evolution">
-            📈
-          </button>
-        </td>
+        <ChartCell onClick={() => onChart(label, ratioData)} title="View evolution" />
       </tr>
     );
   };
   const Section = ({ title }: { title: string }) => (
     <tr>
-      <th colSpan={cols.length + 1} className="sticky left-0 bg-surface px-4 pb-1 pt-4 text-left text-[11px] font-semibold uppercase tracking-wider text-propel-ink">{title}</th>
+      <th colSpan={cols.length + 2} className="sticky left-0 bg-surface px-4 pb-1 pt-4 text-left text-[11px] font-semibold uppercase tracking-wider text-propel-ink">{title}</th>
     </tr>
   );
 
@@ -412,9 +454,14 @@ export default function PnlWorkspace({ matrices }: { matrices: PnlMatrix[] }) {
         )}
       </BottomSheet>
 
-      {/* controls */}
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-4">
+      {/* controls: barra fija; en móvil los filtros se desplazan en horizontal en una sola línea */}
+      <div ref={sentinelRef} aria-hidden />
+      <div
+        ref={barRef}
+        className={`sticky top-14 z-40 -mx-3 mb-3 bg-pacer px-3 py-2 sm:-mx-6 sm:px-6 ${stuck ? "border-b border-line shadow-[0_1px_0_rgba(0,0,0,0.02)]" : ""}`}
+      >
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+        <div className="-mx-1 flex min-w-0 flex-nowrap items-center gap-4 overflow-x-auto px-1 md:flex-wrap md:overflow-visible">
           <div className="flex items-center gap-2">
             <span className="text-xs font-medium uppercase tracking-wider text-muted">Entity:</span>
             <div className="inline-flex overflow-hidden rounded-md border border-line">
@@ -455,14 +502,38 @@ export default function PnlWorkspace({ matrices }: { matrices: PnlMatrix[] }) {
           </button>
         </div>
       </div>
+      {/* siempre ocupa su espacio (sin saltos al pegarse); solo visible con la barra pegada */}
+      {(
+        <div aria-hidden={!stuck} className={`mt-1.5 flex flex-wrap items-center justify-end gap-x-4 gap-y-1 text-xs text-muted transition-opacity ${stuck ? "opacity-100" : "invisible opacity-0"}`}>
+          <span>Revenue <strong className="font-semibold tabular-nums text-ink">{eurShort(revenueFY)}</strong></span>
+          <span>Net <strong className={`font-semibold tabular-nums ${result >= 0 ? "text-nebula" : "text-hotlava"}`}>{eurShort(result)}</strong></span>
+          <span>Margin <strong className={`font-semibold tabular-nums ${result >= 0 ? "text-nebula" : "text-hotlava"}`}>{(margin * 100).toFixed(1)}%</strong></span>
+          <span className="text-muted/80">{kpiSuffix}</span>
+          {lastClose && (
+            <span className="flex items-center gap-1.5"><span className="h-1.5 w-1.5 rounded-full bg-nebula" />Close <strong className="font-semibold text-ink">{lastClose}</strong></span>
+          )}
+        </div>
+      )}
+      </div>
 
-      {/* single scroll container → all tables share column geometry */}
-      <div className="overflow-x-auto rounded-lg border border-line bg-surface">
+      {/* overflow-clip (no hidden) para no romper el sticky de la cabecera */}
+      <div className="overflow-clip rounded-lg border border-line bg-surface">
+        {/* cabecera fija bajo la barra de navegación (h-14) */}
+        <div ref={headRef} className="sticky z-30 overflow-hidden" style={{ top: 56 + barH }}>
+          <table className="border-collapse text-sm" style={tableStyle}>
+            <ColGroup cols={cols} />
+            <thead><Header label="Concept" /></thead>
+          </table>
+        </div>
+        {/* single scroll container → all tables share column geometry */}
+        <div
+          className="overflow-x-auto"
+          onScroll={(e) => { if (headRef.current) headRef.current.scrollLeft = e.currentTarget.scrollLeft; }}
+        >
         {/* P&L */}
         <table className="border-collapse text-sm" style={tableStyle}>
           <ColGroup cols={cols} />
-          <thead><Header label="Concept" /></thead>
-          <tbody>{cats.map((cat) => <CatRows key={cat.key} cat={cat} {...rp} />)}</tbody>
+          <tbody>{cats.filter((cat) => hasValues(blend(cat))).map((cat) => <CatRows key={cat.key} cat={cat} {...rp} />)}</tbody>
           <tfoot>
             <tr className="border-t-2 border-nav">
               <th className="sticky left-0 z-10 bg-surface px-4 py-2.5 text-left font-semibold text-ink">Net result</th>
@@ -471,6 +542,7 @@ export default function PnlWorkspace({ matrices }: { matrices: PnlMatrix[] }) {
                 const color = colColor(c) || (v >= 0 ? "text-nebula" : "text-hotlava");
                 return <td key={i} className={`px-3 py-2.5 text-right font-bold tabular-nums whitespace-nowrap ${bgFor(c.kind)} ${color}`}>{fmt(v)}</td>;
               })}
+              <ChartCell />
             </tr>
           </tfoot>
         </table>
@@ -490,7 +562,7 @@ export default function PnlWorkspace({ matrices }: { matrices: PnlMatrix[] }) {
             <RatioRow label="Labor Cost Operations" mode="growth" get={gPrev("ops")} getDetails={detailsPrev("ops")} />
             <RatioRow label="Opex" mode="growth" get={gPrev("opex")} getDetails={detailsPrev("opex")} />
             <tr>
-              <th colSpan={cols.length + 1} className="sticky left-0 bg-surface px-4 pb-1 pt-4 text-left">
+              <th colSpan={cols.length + 2} className="sticky left-0 bg-surface px-4 pb-1 pt-4 text-left">
                 <div className="flex flex-wrap items-center gap-3">
                   <span className="text-[11px] font-semibold uppercase tracking-wider text-propel-ink">
                     Growth ratios · GR [%] {pyBase === "fc" ? "vs Forecast" : priorYear == null ? "vs PY (no data)" : `vs PY (${priorYear})`}
@@ -541,6 +613,7 @@ export default function PnlWorkspace({ matrices }: { matrices: PnlMatrix[] }) {
             <RatioRow label="EBITDA %" strong signColor get={(c) => { const r = mv(year, "rev", c); return r ? mv(year, "ebitda", c) / r : null; }} getDetails={detailsRatio("EBITDA", "Revenue", "ebitda", "rev")} />
           </tbody>
         </table>
+        </div>
       </div>
 
       <p className="mt-3 text-xs text-muted/80">
@@ -756,24 +829,21 @@ function CatRows({ cat, ...p }: { cat: CatNode } & RowProps) {
   return (
     <>
       <tr onClick={() => p.toggleRow(cat.key)} className={`cursor-pointer border-b border-line font-semibold text-ink hover:bg-pacer ${open ? "bg-pacer/60" : ""}`}>
-        <th className={`sticky left-0 z-10 whitespace-nowrap px-4 py-2 text-left font-semibold ${open ? "bg-[#eef0f0]" : "bg-surface"}`}>
+        <th className={`sticky left-0 z-10 truncate px-4 py-2 text-left font-semibold ${open ? "bg-[#eef0f0]" : "bg-surface"}`}>
           <Chevron open={open} /> <span className="ml-1">{cat.label}</span>
         </th>
         {p.cols.map((c, i) => <td key={i} className={p.cellClass(c, "font-semibold")}>{fmt(valueFor(m, c))}</td>)}
-        <td className="px-1 py-2 text-center">
-          <button onClick={(e) => { e.stopPropagation(); p.onChart?.(cat.label, monthlyActual); }} className="text-sm text-muted/50 hover:text-propel-ink transition-colors" title="View chart">
-            📈
-          </button>
-        </td>
+        <ChartCell onClick={p.onChart && (() => p.onChart?.(cat.label, monthlyActual))} />
       </tr>
-      {open && cat.subs.map((sub) => <SubRows key={sub.key} sub={sub} {...p} />)}
+      {open && cat.subs.filter((sub) => hasValues(p.blend(sub))).map((sub) => <SubRows key={sub.key} sub={sub} {...p} />)}
     </>
   );
 }
 
 function SubRows({ sub, ...p }: { sub: SubNode } & RowProps) {
   const open = p.rows.has(sub.key);
-  const hasDetail = sub.accounts.length > 0;
+  const accounts = sub.accounts.filter((a) => hasValues(p.blend(a)));
+  const hasDetail = accounts.length > 0;
   const m = p.blend(sub);
   return (
     <>
@@ -782,26 +852,18 @@ function SubRows({ sub, ...p }: { sub: SubNode } & RowProps) {
           {hasDetail ? <Chevron open={open} /> : <span className="inline-block w-3" />} <span className="ml-1">{sub.label}</span>
         </th>
         {p.cols.map((c, i) => <td key={i} className={p.cellClass(c)}>{fmt(valueFor(m, c))}</td>)}
-        <td className="px-1 py-1.5 text-center">
-          <button onClick={(e) => { e.stopPropagation(); p.onChart?.(sub.label, m); }} className="text-sm text-muted/50 hover:text-propel-ink transition-colors" title="View chart">
-            📈
-          </button>
-        </td>
+        <ChartCell onClick={p.onChart && (() => p.onChart?.(sub.label, m))} />
       </tr>
-      {open && sub.accounts.map((a) => {
+      {open && accounts.map((a) => {
         const am = p.blend(a);
         return (
           <tr key={a.account} className="border-b border-line/50 text-muted hover:bg-pacer/30">
             <th className="sticky left-0 z-10 overflow-hidden text-ellipsis whitespace-nowrap bg-surface px-4 py-1.5 pl-16 text-left font-normal" title={a.name}>
-              <span className="mr-2 font-mono text-xs text-muted/70">{a.account}</span>
+              {showAccountNumber(a.account) && <span className="mr-2 font-mono text-xs text-muted/70">{a.account}</span>}
               {a.name}
             </th>
             {p.cols.map((c, i) => <td key={i} className={p.cellClass(c)}>{fmt(valueFor(am, c))}</td>)}
-            <td className="px-0 py-1 text-center w-4">
-              <button onClick={(e) => { e.stopPropagation(); p.onChart?.(a.name, am); }} className="text-xs text-muted/50 hover:text-propel-ink transition-colors" title="View evolution">
-                📈
-              </button>
-            </td>
+            <ChartCell onClick={p.onChart && (() => p.onChart?.(a.name, am))} title="View evolution" />
           </tr>
         );
       })}
