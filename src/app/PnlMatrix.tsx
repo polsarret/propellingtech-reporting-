@@ -72,9 +72,6 @@ const valueFor = (months: number[], col: Col): number => {
 };
 // Fila visible solo si tiene algún importe en la vista actual (entidad + forecast): al filtrar por SL,
 // las cuentas de la LLC (y al revés) saldrían enteras a 0.
-// Solo se muestra el número de cuenta del PGC (SL/Holded, 8 dígitos). Los de QuickBooks (LLC/Corp)
-// son IDs internos (hasta 19 dígitos) que no aportan nada al lector.
-const showAccountNumber = (account: string) => /^\d{8}$/.test(account);
 const hasValues = (months: number[]) => months.some((v) => Math.abs(v) >= 0.5);
 const addArr = (a: number[], b: number[]) => a.map((v, i) => v + b[i]);
 const subArr = (a: number[], b: number[]) => a.map((v, i) => v - b[i]);
@@ -859,7 +856,7 @@ function SubRows({ sub, ...p }: { sub: SubNode } & RowProps) {
         return (
           <tr key={a.account} className="border-b border-line/50 text-muted hover:bg-pacer/30">
             <th className="sticky left-0 z-10 overflow-hidden text-ellipsis whitespace-nowrap bg-surface px-4 py-1.5 pl-16 text-left font-normal" title={a.name}>
-              {showAccountNumber(a.account) && <span className="mr-2 font-mono text-xs text-muted/70">{a.account}</span>}
+              <span className="mr-2 font-mono text-xs text-muted/70">{a.account}</span>
               {a.name}
             </th>
             {p.cols.map((c, i) => <td key={i} className={p.cellClass(c)}>{fmt(valueFor(am, c))}</td>)}
